@@ -1,0 +1,705 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Chile &amp; Patagonia Fjords – 14-Day Expedition</title>
+
+  <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.1.3/dist/maplibre-gl.css" />
+  <script src="https://unpkg.com/maplibre-gl@4.1.3/dist/maplibre-gl.js"></script>
+  <style>
+    @font-face { font-family: 'Minion Pro'; src: url('font/MinionPro-Regular.otf') format('opentype'); font-weight: 400; font-style: normal; }
+    @font-face { font-family: 'Akkurat'; src: url('font/Akkurat-Light.ttf') format('truetype'); font-weight: 300; font-style: normal; }
+    @font-face { font-family: 'Akkurat'; src: url('font/Akkurat.ttf') format('truetype'); font-weight: 400; font-style: normal; }
+    @font-face { font-family: 'Akkurat'; src: url('font/Akkurat-Bold.ttf') format('truetype'); font-weight: 700; font-style: normal; }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; font-family: 'Akkurat', sans-serif; background: #C7E6F0; }
+    #map { width: 100vw; height: 100vh; }
+
+    /* ── Day selector bar (bottom) ──────────────────────────────── */
+    #day-bar {
+      position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%);
+      z-index: 1000; display: flex; align-items: center; gap: 6px;
+      background: rgba(255,255,255,0.97); border-radius: 14px;
+      padding: 10px 10px; box-shadow: 0 10px 32px rgba(0,0,0,0.16), 0 2px 8px rgba(0,0,0,0.07);
+      border: 1px solid rgba(27,105,140,0.14);
+      max-width: calc(100vw - 40px);
+    }
+    .day-nav-btn {
+      flex-shrink: 0; width: 30px; height: 30px; border-radius: 50%; border: none;
+      background: #F0F4F6; color: #1B698C; font-size: 16px; cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      transition: background 0.15s, color 0.15s;
+    }
+    .day-nav-btn:hover { background: #1E88C7; color: #fff; }
+    #day-track {
+      display: flex; gap: 5px; overflow-x: auto; scroll-behavior: smooth;
+      max-width: min(760px, 68vw); padding: 2px;
+    }
+    #day-track::-webkit-scrollbar { height: 4px; }
+    #day-track::-webkit-scrollbar-thumb { background: rgba(27,105,140,0.25); border-radius: 4px; }
+    .day-pip {
+      flex-shrink: 0; width: 34px; height: 34px; border-radius: 50%;
+      border: 2px solid #d8dee2; background: #fff; color: #6b7280;
+      font-weight: 700; font-size: 13px; cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      transition: all 0.15s ease;
+    }
+    .day-pip:hover { border-color: #1E88C7; color: #1E88C7; }
+    .day-pip.active { background: #1E88C7; border-color: #1E88C7; color: #fff; transform: scale(1.12); }
+    .day-pip.visited { border-color: #b9d9e8; color: #1B698C; }
+
+    /* ── Day popup (anchored to the current-position dot) ───────── */
+    .maplibregl-popup-content {
+      padding: 14px !important; border-radius: 14px !important;
+      box-shadow: 0 10px 32px rgba(0,0,0,0.16), 0 2px 8px rgba(0,0,0,0.07) !important;
+      border: 1px solid rgba(27,105,140,0.14); font-family: 'Akkurat', sans-serif;
+    }
+    .maplibregl-popup-tip { display: none !important; }
+    .maplibregl-popup-close-button { font-size: 18px; color: #9aa3ab; padding: 4px 8px; outline: none; box-shadow: none; }
+    .maplibregl-popup-close-button:focus { outline: none; box-shadow: none; }
+    .popup-body { display: flex; flex-direction: column; }
+    .popup-thumb {
+      width: calc(100% + 28px); aspect-ratio: 600 / 280; margin: -14px -14px 12px; border-radius: 14px 14px 0 0;
+      overflow: hidden; position: relative; background-size: cover; background-position: center;
+      display: flex; align-items: flex-end; padding: 10px; box-sizing: border-box;
+    }
+    .popup-thumb.type-sea     { background: linear-gradient(155deg, #1E88C7, #123B54); }
+    .popup-thumb.type-landing { background: linear-gradient(155deg, #3FA796, #12463F); }
+    .popup-thumb.type-flight  { background: linear-gradient(155deg, #6FB7E0, #1B698C); }
+    .popup-thumb.type-city    { background: linear-gradient(155deg, #D98552, #7A3B22); }
+    .popup-thumb .thumb-daynum {
+      font-family: 'Minion Pro', Georgia, serif; font-style: italic; font-weight: 400;
+      font-size: 34px; color: rgba(255,255,255,0.35); line-height: 1;
+    }
+    .popup-info { flex: 1; min-width: 0; }
+    .popup-eyebrow { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; }
+    .popup-daynum {
+      font-family: 'Minion Pro', Georgia, serif; font-style: italic; font-weight: 400;
+      font-size: 13px; color: #1E88C7; white-space: nowrap;
+    }
+    .popup-badge {
+      font-family: 'Akkurat', sans-serif;
+      font-size: 9px; font-weight: 700; letter-spacing: 1.2px; text-transform: uppercase;
+      color: #fff; background: #1B698C; padding: 3px 9px; border-radius: 20px; white-space: nowrap;
+    }
+    .popup-title { font-family: 'Minion Pro', Georgia, serif; font-size: 19px; font-weight: 400; color: #1a1a1a; margin-bottom: 6px; letter-spacing: -0.2px; }
+    .popup-text { font-family: 'Akkurat', sans-serif; font-size: 12.5px; line-height: 1.6; color: #5d6470; }
+
+    /* ── Region / place labels ─────────────────────────────────── */
+    .region-label {
+      font-family: 'Minion Pro', Georgia, serif; font-style: italic; font-weight: 400;
+      color: #1B698C; white-space: nowrap; pointer-events: none; letter-spacing: 0.4px;
+      text-shadow: 0 0 8px rgba(199,230,240,0.9), 0 0 16px rgba(199,230,240,0.7);
+    }
+    .place-label {
+      font-family: 'Akkurat', sans-serif; font-weight: 400; color: #4b5563;
+      white-space: nowrap; pointer-events: none; letter-spacing: 0.2px; line-height: 1.3; text-align: center;
+      text-shadow: -1.5px -1.5px 0 rgba(199,230,240,0.85), 1.5px -1.5px 0 rgba(199,230,240,0.85),
+                   -1.5px  1.5px 0 rgba(199,230,240,0.85), 1.5px  1.5px 0 rgba(199,230,240,0.85);
+    }
+    .city-label {
+      font-family: 'Minion Pro', Georgia, serif; font-weight: 700; color: #1a1a1a; font-size: 16px;
+      white-space: nowrap; pointer-events: none; letter-spacing: 0.2px; text-align: center;
+      text-shadow: -1.5px -1.5px 0 #fff, 1.5px -1.5px 0 #fff, -1.5px 1.5px 0 #fff, 1.5px 1.5px 0 #fff,
+                   0 0 8px rgba(255,255,255,0.9);
+    }
+
+    /* ── Marker pin (decorative city pins) ─────────────────────────── */
+    .marker-pin { pointer-events: none; }
+
+    /* ── Current-position marker (moves per day) ───────────────── */
+    @keyframes pos-pulse {
+      0%   { box-shadow: 0 0 0 0    rgba(30,136,199,0.65), 0 2px 6px rgba(0,0,0,0.25); }
+      65%  { box-shadow: 0 0 0 16px rgba(30,136,199,0.00), 0 2px 6px rgba(0,0,0,0.25); }
+      100% { box-shadow: 0 0 0 0    rgba(30,136,199,0.00), 0 2px 6px rgba(0,0,0,0.25); }
+    }
+    .current-pos {
+      width: 16px; height: 16px; border-radius: 50%; background: #1E88C7;
+      border: 3px solid #fff; pointer-events: none;
+      animation: pos-pulse 2s ease-out infinite;
+    }
+
+    /* ── Day-marker dot (one per day, only shown while that day is
+       selected) — same circle format as .current-pos above (16px,
+       #1E88C7 fill, 3px white border, soft shadow, pos-pulse
+       animation). Hidden for every day except the active one, so the
+       map only ever shows a single current-position dot at a time,
+       matching Polar's one-dot-at-a-time logic. */
+    .map-day-dot {
+      display: none; width: 16px; height: 16px; border-radius: 50%; background: #1E88C7;
+      border: 3px solid #fff; box-shadow: 0 2px 6px rgba(0,0,0,0.25);
+      cursor: pointer;
+    }
+    .map-day-dot.active { display: block; animation: pos-pulse 2s ease-out infinite; z-index: 10; }
+
+    /* ── Responsive: tablet ───────────────────────────────────────
+       Desktop rules above stay untouched; everything below only
+       kicks in at narrower viewports. */
+    @media (max-width: 900px) {
+      .maplibregl-popup { max-width: 320px !important; }
+      .popup-title { font-size: 17px; }
+    }
+
+    /* ── Responsive: mobile ─────────────────────────────────────────
+       Below 700px, the floating popup + floating day-bar (a desktop
+       map-tooltip convention) are replaced by a single bottom sheet:
+       one docked surface with a bigger-target day scroller and the
+       day's content together, leaving the map fully visible above it. */
+    #mobile-sheet { display: none; }
+    @media (max-width: 700px) {
+      #day-bar { display: none; }
+      .maplibregl-popup { display: none !important; }
+      .city-label { font-size: 14px; }
+
+      #mobile-sheet {
+        display: block; position: absolute; left: 0; right: 0; bottom: 0; z-index: 1000;
+        background: #fff; border-radius: 18px 18px 0 0;
+        box-shadow: 0 -8px 24px rgba(0,0,0,0.16), 0 -2px 8px rgba(0,0,0,0.06);
+        padding: 8px 16px calc(14px + env(safe-area-inset-bottom));
+        max-height: 42vh; overflow-y: auto;
+        transition: max-height 0.2s ease;
+      }
+      #mobile-sheet.expanded { max-height: 78vh; }
+      #mobile-sheet-handle {
+        width: 34px; height: 4px; border-radius: 2px; background: #d8dee2;
+        margin: 0 auto 10px; cursor: pointer;
+      }
+      #mobile-day-track {
+        display: flex; gap: 8px; overflow-x: auto; padding-bottom: 10px; margin-bottom: 10px;
+        border-bottom: 0.5px solid rgba(27,105,140,0.14);
+      }
+      #mobile-day-track::-webkit-scrollbar { display: none; }
+      .mobile-day-pip {
+        flex-shrink: 0; width: 40px; height: 40px; border-radius: 50%;
+        border: 1.5px solid #d8dee2; background: #fff; color: #6b7280;
+        font-family: 'Akkurat', sans-serif; font-weight: 700; font-size: 13px; cursor: pointer;
+        display: flex; align-items: center; justify-content: center;
+      }
+      .mobile-day-pip.active { background: #1E88C7; border-color: #1E88C7; color: #fff; }
+      .mobile-day-pip.visited { border-color: #b9d9e8; color: #1B698C; }
+      #mobile-sheet .popup-body { display: flex; flex-direction: row; gap: 12px; align-items: stretch; }
+      #mobile-sheet .popup-thumb {
+        width: 88px; aspect-ratio: 1 / 1; align-self: flex-start; margin: 0; border-radius: 8px; padding: 6px; flex-shrink: 0;
+      }
+      #mobile-sheet .popup-thumb .thumb-daynum { font-size: 20px; }
+      #mobile-sheet .popup-title { font-size: 15px; margin-bottom: 4px; }
+      #mobile-sheet .popup-text { font-size: 11.5px; line-height: 1.5; }
+    }
+
+    @media (max-width: 420px) {
+      #mobile-sheet .popup-thumb { width: 72px; }
+      .mobile-day-pip { width: 36px; height: 36px; font-size: 12px; }
+    }
+  </style>
+</head>
+<body>
+
+  <div id="map"></div>
+
+  <div id="day-bar">
+    <button class="day-nav-btn" data-dir="-1" title="Previous day">‹</button>
+    <div id="day-track"></div>
+    <button class="day-nav-btn" data-dir="1" title="Next day">›</button>
+  </div>
+
+  <div id="mobile-sheet">
+    <div id="mobile-sheet-handle"></div>
+    <div id="mobile-day-track"></div>
+    <div class="popup-body">
+      <div id="mobile-thumb" class="popup-thumb"></div>
+      <div class="popup-info">
+        <div class="popup-eyebrow">
+          <span id="mobile-daynum" class="popup-daynum"></span>
+          <span id="mobile-badge" class="popup-badge"></span>
+        </div>
+        <div id="mobile-title" class="popup-title"></div>
+        <div id="mobile-text" class="popup-text"></div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const ll = c => [c[1], c[0]]; // [lat,lng] → [lng,lat]
+
+    const map = new maplibregl.Map({
+      container: 'map',
+      style: 'https://tiles.openfreemap.org/styles/positron',
+      bounds: [[-77, -57.5], [-56, -31.5]],
+      fitBoundsOptions: { padding: 60 },
+      minZoom: 2,
+      maxZoom: 12,
+      attributionControl: false,
+      boxZoom: false
+    });
+    map.dragRotate.disable();
+    map.touchZoomRotate.disableRotation();
+    requestAnimationFrame(() => map.resize());
+    window.addEventListener('resize', () => map.resize());
+
+    function spline(pts, segs = 16) {
+      if (pts.length < 2) return pts;
+      const out = [];
+      for (let i = 0; i < pts.length - 1; i++) {
+        const p0 = pts[Math.max(0, i - 1)];
+        const p1 = pts[i];
+        const p2 = pts[i + 1];
+        const p3 = pts[Math.min(pts.length - 1, i + 2)];
+        for (let s = 0; s < segs; s++) {
+          const t = s / segs, t2 = t * t, t3 = t2 * t;
+          out.push([
+            0.5 * ((2*p1[0]) + (-p0[0]+p2[0])*t + (2*p0[0]-5*p1[0]+4*p2[0]-p3[0])*t2 + (-p0[0]+3*p1[0]-3*p2[0]+p3[0])*t3),
+            0.5 * ((2*p1[1]) + (-p0[1]+p2[1])*t + (2*p0[1]-5*p1[1]+4*p2[1]-p3[1])*t2 + (-p0[1]+3*p1[1]-3*p2[1]+p3[1])*t3)
+          ]);
+        }
+      }
+      out.push(pts[pts.length - 1]);
+      return out;
+    }
+
+    // ── Key points [lng, lat] ───────────────────────────────────────
+    const BA        = [-58.3816, -34.6037];
+    const BA_DOT     = [-58.3816, -35.1647]; // BA shifted south — where the route line/dot actually sit
+    const VALPO      = [-71.6273, -33.0472];
+    const NIEBLA     = [-73.3986, -39.8721];
+    const PMONTT     = [-72.9411, -41.4693];
+    const PMONTT_D13 = [-74.7385992205018, -36.375491772781494]; // Day 13's placeholder dot (still duplicating Puerto Montt content), 20px right of its prior position
+    const CASTRO     = [-73.7645, -42.4827];
+    const P_D10_A    = [-75.11219, -45.3557]; // Day 10 route waypoint, between STRAIT_A and CASTRO
+    const P_D10_B    = [-74.438345, -43.936548]; // Day 10 route waypoint, between P_D10_A and CASTRO
+    const P_D10_C    = [-73.73061032818387, -43.455784000000044]; // Day 10 route waypoint, between P_D10_B and CASTRO; 40px right of its prior position
+    const P_D10_D    = [-73.41398687772634, -42.92466113699583]; // Day 10 route waypoint, between P_D10_C and CASTRO; 30px right/10px up of its prior position
+    // Day 11 route waypoints — Castro to Puerto Montt via the Golfo de
+    // Ancud/Seno de Reloncaví, the inner sea both cities actually front,
+    // instead of a straight line across Chiloé Island's landmass.
+    const P_D11_A    = [-72.87911103945478, -42.09999999999826]; // 10px left of its prior position
+    const P_D12_A2   = [-73.2999999999989, -41.79686799777818]; // Day 12's own version of P_D11_A, separated so the two days no longer share this point; 30px down of its prior position
+    const P_D11_B    = [-72.92220118335331, -41.59999999999882]; // 20px right of its prior position
+    const P_D12_B1   = [-72.99999999999986, -41.55217735892652]; // Day 12's own version of P_D11_B, separated so the two days no longer share this point
+    // Day 12 route waypoints — Puerto Montt to Niebla, offshore around the
+    // coastal bulge to stay in water.
+    const P_D12_B2   = [-73.95068359374855, -41.531433439922566]; // 50px right of its prior position
+    const P_D12_C    = [-74.08027343750024, -40.80086322762661]; // 20px down of its prior position
+    const P_D12_C_M2 = [-73.95916356250034, -40.253213]; // single bend point into Niebla
+    const PIOXI      = [-73.95, -49.08];     // Pío XI (Brüggen) Glacier; nudged into the fjord's water channel (was on land)
+    const STRAIT_A   = [-75.78603515625056, -46.74013499896131]; // northern Strait of Magellan; Day 9 dot, 10px left/10px up of its prior position
+    const STRAIT_B   = [-74.95576171875186, -52.41618764666217]; // Strait of Magellan, approaching Punta Arenas; Day 7 dot, 10px left/20px up of its prior position
+    const P_D7_A     = [-71.08720432812316, -53.904196369436825]; // Day 7 route waypoint, between PARENAS and STRAIT_B; 20px left of its prior position
+    const P_D7_B     = [-72.93643100000007, -53.36953256156412]; // Day 7 route waypoint, between P_D7_A and STRAIT_B; 100px down of its prior position
+    const P_D7_C     = [-73.94609600000035, -52.94718138776552]; // Day 7 route waypoint, between P_D7_B and STRAIT_B; 15px down of its prior position
+    // Day 8/9 route waypoints — the direct STRAIT_B–PIOXI–STRAIT_A line cut across
+    // solid land through this fjord-choked stretch; these route it up the clear
+    // western channel, jog east into the fjord to reach the glacier, then back.
+    const P_D8_A     = [-74.92672231643044, -50.50000000000161]; // 30px right of its prior position
+    const P_D8_B     = [-74.45114821095406, -49.50000000000195]; // 20px right of its prior position
+    const P_D9_A     = [-74.5, -48.7];
+    const P_D9_B     = [-75.00318602189817, -48.30000000000193]; // 15px left of its prior position
+    const PARENAS    = [-70.9171, -53.1638]; // Punta Arenas
+    const COCKBURN   = [-70.6972734374993, -53.52800986823291]; // Cockburn Channel; 20px right of its prior position
+    const P_D6_B     = [-70.91358800000025, -54.14157454980372]; // Day 6 route waypoint, between AGOSTINI and P_D6_A; 20px up of its prior position
+    const P_D6_A     = [-70.91662899999966, -53.91484918155257]; // Day 6 route waypoint, between P_D6_B and COCKBURN; 30px up of its prior position
+    const AGOSTINI   = [-70.91054687499832, -54.40148666402674]; // Agostini Fjord & Glacier; Day 5 dot, 20px up of its prior position
+    const P_D5_A     = [-70.51521932786098, -55.74099755717225]; // Day 5 route waypoint, between GARIBALDI and AGOSTINI; 50px up of its prior position
+    const P_D5_B     = [-73.07402582379882, -55.30214006353459]; // Day 5 route waypoint, between P_D5_A and AGOSTINI; 100px left/300px up of its prior position
+    const P_D5_C     = [-73.97749389424906, -54.457645965982515]; // Day 5 route waypoint, between P_D5_B and AGOSTINI; 20px right of its prior position
+    const P_D5_D     = [-71.5, -54.42]; // Day 5 route waypoint, easing the sharp turn into AGOSTINI so the spline doesn't overshoot into a curl right after it
+    const GARIBALDI  = [-70.18027343749907, -54.82000000000347]; // Garibaldi Glacier; Day 4 dot, 20px right of its prior position
+    const PIA        = [-69.97958984375012, -55.75897649247599]; // Pia Glacier, off the Beagle Channel; 30px left of its prior position
+    const P_D4_A     = [-67.54538499999957, -56.02505364551358]; // Day 4 route waypoint, between CAPEHORN and PIA; 40px down of its prior position
+    const P_D4_B     = [-68.24692299999977, -55.94390995402406]; // Day 4 route waypoint, between P_D4_A and PIA; 80px down of its prior position
+    const P_D4_C     = [-68.94846199999955, -55.862596163563595]; // Day 4 route waypoint, between P_D4_B and PIA; 120px down of its prior position
+    const CAPEHORN   = [-66.84384687500177, -56.10602737007311]; // Day 3 dot, 20px left/20px up of its prior position
+    const USH        = [-68.3030, -54.8019];
+    const P_D2_MID   = [-59.66862957202045, -46.73464741415411]; // Day 2 route waypoint, bows the flight path west of a straight BA_DOT–USH line
+    const P_D3_A     = [-67.69063143821097, -54.88318359520033]; // Day 3 route waypoint, between USH and P_D3_MID; 10px down of its prior position
+    const P_D3_B     = [-66.7757108330971, -55.01783036048741]; // Day 3 route waypoint, between P_D3_A and P_D3_MID; 20px down of its prior position
+    const P_D3_MID   = [-66.56028264761309, -55.739959192345054]; // Day 3 route waypoint, bows the Cape Horn approach; 30px right of its prior position
+
+    // ── 14-day itinerary ─────────────────────────────────────────
+    const DAYS = [
+      { n: 1,  title: 'Buenos Aires',                     badge: 'Pre-Expedition', type: 'city',
+        text: 'Explore colourful La Boca and soak up Buenos Aires’ vibrant culture.',
+        coords: [BA_DOT] },
+      { n: 2,  title: 'Ushuaia Embarkation',              badge: 'Charter Flight', type: 'flight',
+        text: 'Fly to Ushuaia and board Scenic Eclipse II for your voyage ahead.',
+        coords: [BA_DOT, P_D2_MID, USH] },
+      { n: 3,  title: 'Cape Horn',                        badge: 'At Sea', type: 'sea',
+        text: 'Cruise legendary Cape Horn and spot wildlife where two oceans meet.',
+        coords: [USH, P_D3_A, P_D3_B, P_D3_MID, CAPEHORN] },
+      { n: 4,  title: 'Chilean Fjords',                   badge: 'Landing', type: 'landing',
+        text: 'Cruise past towering glaciers and explore icy waterways by Zodiac.',
+        coords: [CAPEHORN, P_D4_A, P_D4_B, P_D4_C, PIA, GARIBALDI] },
+      { n: 5,  title: 'Agostini Fjord',                   badge: 'Landing', type: 'landing',
+        text: 'Discover pristine fjords framed by glaciers, peaks and marine life.',
+        coords: [GARIBALDI, P_D5_A, P_D5_B, P_D5_C, P_D5_D, AGOSTINI] },
+      { n: 6,  title: 'Punta Arenas',                     badge: 'Landing', type: 'landing',
+        text: 'Explore Patagonia’s historic gateway and its rich explorer heritage.',
+        coords: [AGOSTINI, P_D6_B, P_D6_A, COCKBURN, PARENAS] },
+      { n: 7,  title: 'Patagonian Channels',               badge: 'At Sea', type: 'sea',
+        text: 'Sail through glacier-carved waterways lined with forests and peaks.',
+        coords: [PARENAS, P_D7_A, P_D7_B, P_D7_C, STRAIT_B] },
+      { n: 8,  title: 'Pío XI Glacier',                   badge: 'Landing', type: 'landing',
+        text: 'Witness the mighty Pío XI Glacier and visit remote Puerto Edén.',
+        coords: [STRAIT_B, P_D8_A, P_D8_B, PIOXI] },
+      { n: 9,  title: 'Life on Board',                    badge: 'At Sea', type: 'sea',
+        text: 'Relax in ultra-luxury and hear insights from the Discovery Team.',
+        coords: [PIOXI, P_D9_A, P_D9_B, STRAIT_A] },
+      { n: 10, title: 'Chiloé Island',                    badge: 'Landing', type: 'landing',
+        text: 'Discover colourful Castro and the unique culture of Chiloé Island.',
+        coords: [STRAIT_A, P_D10_A, P_D10_B, P_D10_C, P_D10_D, CASTRO] },
+      { n: 11, title: 'Puerto Montt',                     badge: 'Landing', type: 'landing',
+        text: 'Explore Chile’s Lake District beneath snow-capped volcanoes.',
+        coords: [CASTRO, P_D11_A, P_D11_B, PMONTT] },
+      { n: 12, title: 'Valdivian Coast',                  badge: 'Landing', type: 'landing',
+        text: 'Choose from nature, culture and adventure in beautiful Valdivia.',
+        coords: [PMONTT, P_D12_B1, P_D12_A2, P_D12_B2, P_D12_C, P_D12_C_M2, NIEBLA] },
+      { n: 13, title: 'At Sea',                           badge: 'At Sea', type: 'sea',
+        text: 'Reflect on your discoveries while enjoying world-class dining at sea.',
+        coords: [NIEBLA, PMONTT_D13] },
+      { n: 14, title: 'Valparaíso',                       badge: 'Disembarkation', type: 'landing',
+        text: 'Disembark in colourful Valparaíso with unforgettable memories.',
+        coords: [PMONTT_D13, VALPO] },
+    ];
+    DAYS.forEach(d => {
+      d.image = `image/desktop/${d.n}.png`;
+      d.imageMobile = `image/mobile/${d.n}.png`;
+    });
+
+    // Group consecutive sailing days into one continuous leg each, so the
+    // ghost route curves smoothly through them instead of showing an angular
+    // joint at every day boundary. Flights (2, and the final leg into 14)
+    // are their own legs so the cruise stays one unbroken curve.
+    // Days 13 and 14 are their own separate legs, not part of the days
+    // 3-12 continuous cruise spline. Both currently connect to a
+    // disconnected placeholder point (PMONTT_D13) far from the rest of the
+    // route; when they were part of the same Catmull-Rom spline as days
+    // 3-12, that distant point pulled the curve's tangent at Niebla into a
+    // large southward V-shaped overshoot before continuing on. Splitting
+    // them into their own legs means each is smoothed independently as a
+    // simple direct line between its own two points, with no influence
+    // from the unrelated days 3-12 geometry.
+    const GHOST_LEGS = [[2], [3, 4, 5, 6, 7, 8, 9, 10, 11, 12], [13, 14]];
+    // Shared by the ghost (full-journey) route and the traveled-so-far route below,
+    // so the two are always built from the exact same curve — never two independent shapes.
+    //
+    // Always spline, never roundedPath: Catmull-Rom spline passes exactly
+    // through every input point (at t=0 each segment evaluates to the raw
+    // vertex) while still curving smoothly between them, so every day's
+    // dot stays exactly on the line AND every corner — including day
+    // boundaries — is rounded, not just the two days that used to opt in
+    // via `rounded: true`. roundedPath, by contrast, deliberately cuts
+    // corners inward and never touches the original vertex, which is why
+    // it can't be used here without pushing dots off the line again.
+    // Smoothing the whole leg at once (not day-by-day) also restores
+    // proper tangents across day boundaries, so there's no kink where one
+    // day's curve meets the next.
+    function legCoords(days) {
+      const pts = [];
+      days.forEach(n => {
+        DAYS.find(d => d.n === n).coords.forEach(c => {
+          const last = pts[pts.length - 1];
+          if (!last || last[0] !== c[0] || last[1] !== c[1]) pts.push(c);
+        });
+      });
+      return pts;
+    }
+    function smoothedLeg(days) {
+      const out = [];
+      spline(legCoords(days), 12).forEach(c => {
+        const last = out[out.length - 1];
+        if (!last || last[0] !== c[0] || last[1] !== c[1]) out.push(c);
+      });
+      return out;
+    }
+    const ghostSegments = GHOST_LEGS.map(days => ({
+      type: 'Feature', properties: { days }, geometry: { type: 'LineString', coordinates: smoothedLeg(days) }
+    }));
+
+    // The route already traveled: every leg (or partial leg) up to and including
+    // the current day, concatenated into one continuous line. Rather than
+    // resmoothing a truncated point list (which very slightly un-rounds the
+    // final corner and leaves a visible seam against the dashed continuation),
+    // this slices directly out of the leg's already-computed ghost coordinates
+    // — so the traveled line is always a literal prefix of the ghost line, not
+    // a separately-computed approximation of it.
+    function travelledCoords(n) {
+      const out = [];
+      GHOST_LEGS.forEach(days => {
+        const included = days.filter(d => d <= n);
+        if (included.length === 0) return;
+        const fullCoords = smoothedLeg(days);
+        let sliceCoords = fullCoords;
+        if (included.length < days.length) {
+          const cutPoint = DAYS.find(d => d.n === included[included.length - 1]).coords.slice(-1)[0];
+          let bestIdx = 0, bestDist = Infinity;
+          fullCoords.forEach((c, i) => {
+            const dist = (c[0] - cutPoint[0]) ** 2 + (c[1] - cutPoint[1]) ** 2;
+            if (dist < bestDist) { bestDist = dist; bestIdx = i; }
+          });
+          sliceCoords = fullCoords.slice(0, bestIdx + 1);
+        }
+        sliceCoords.forEach(c => {
+          const last = out[out.length - 1];
+          if (!last || last[0] !== c[0] || last[1] !== c[1]) out.push(c);
+        });
+      });
+      return out;
+    }
+
+    let currentDay = 1;
+    let map1Loaded = false;
+
+    map.on('load', () => {
+      map1Loaded = true;
+      // ── Colour overrides: uniform tan land, icy-blue sea ─────────
+      map.setPaintProperty('background', 'background-color', '#E3DAC4');
+      map.setPaintProperty('water', 'fill-color', '#C7E6F0');
+      if (map.getLayer('water-intermittent')) map.setPaintProperty('water-intermittent', 'fill-color', '#C7E6F0');
+      if (map.getLayer('waterway')) map.setPaintProperty('waterway', 'line-color', '#C7E6F0');
+      ['landuse_residential','landcover_wood','park','landcover_grass','landuse_grass',
+       'landuse_park','landuse_commercial','landuse_industrial','landuse_cemetery',
+       'landuse_farmland','landuse_scrub','landuse_meadow','landcover_sand','landcover_ice',
+       'landcover_ice_shelf','landcover_glacier'
+      ].forEach(id => { if (map.getLayer(id)) map.setPaintProperty(id, 'fill-color', '#E3DAC4'); });
+
+      map.getStyle().layers.filter(l => l.type === 'symbol').forEach(l => map.setLayoutProperty(l.id, 'visibility', 'none'));
+      map.getStyle().layers.filter(l => l.type === 'line' && l.id !== 'waterway').forEach(l => map.setLayoutProperty(l.id, 'visibility', 'none'));
+
+      // ── Ghost route (full 14-day journey, faint, for context) ────
+      map.addSource('ghost-route', { type: 'geojson', data: { type: 'FeatureCollection', features: ghostSegments } });
+      map.addLayer({ id: 'ghost-route-line', type: 'line', source: 'ghost-route',
+        layout: { 'line-join': 'round', 'line-cap': 'round' },
+        paint: { 'line-color': '#1E88C7', 'line-width': 1.5, 'line-opacity': 0.35, 'line-dasharray': [0.5, 1.5] } });
+
+      // ── Active day segment (updated on day change) ────────────────
+      map.addSource('active-route', { type: 'geojson', data: { type: 'Feature', geometry: { type: 'LineString', coordinates: [] } } });
+      map.addLayer({ id: 'active-route-main', type: 'line', source: 'active-route',
+        layout: { 'line-join': 'round', 'line-cap': 'round' },
+        paint: { 'line-color': '#4FA3D1', 'line-width': 3, 'line-opacity': 0.85 } });
+
+      // ── Region labels ────────────────────────────────────────────
+      [
+        { coords: [-72.0, -45.5], text: 'Chile', size: 21 },
+        { coords: [-62.0, -40.0], text: 'Argentina', size: 21 },
+      ].forEach(({ coords, text, size }) => {
+        const el = document.createElement('div');
+        el.className = 'region-label'; el.style.fontSize = size + 'px'; el.textContent = text;
+        new maplibregl.Marker({ element: el, anchor: 'center' }).setLngLat(ll(coords)).addTo(map);
+      });
+
+      // ── Place labels ────────────────────────────────────────────
+      [
+        { coords: [-46.4, -73.7], text: 'Messier\nChannel' },
+        { coords: [-49.35, -74.65], text: 'Puerto Edén' },
+        { coords: [-52.0, -72.3], text: 'Strait of\nMagellan' },
+        { coords: [-54.55, -70.55], text: 'Cockburn Channel' },
+        { coords: [-54.87, -68.55], text: 'Beagle Channel' },
+        { coords: [-55.98, -67.28], text: 'Cape Horn' },
+      ].forEach(({ coords, text }) => {
+        const el = document.createElement('div');
+        el.className = 'place-label';
+        el.innerHTML = text.split('\n').join('<br>');
+        new maplibregl.Marker({ element: el, anchor: 'center' }).setLngLat(ll(coords)).addTo(map);
+      });
+
+      // ── City labels + pins (decorative) ───────────────────────────
+      const pinSvg = '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="31" viewBox="0 0 20 26" style="filter:drop-shadow(0 2px 3px rgba(0,0,0,0.3))"><path d="M10 0C4.477 0 0 4.477 0 10c0 7.5 10 16 10 16S20 17.5 20 10C20 4.477 15.523 0 10 0z" fill="#1a1a1a"/><circle cx="10" cy="10" r="3.5" fill="white"/></svg>';
+
+      const baLabel = document.createElement('div');
+      baLabel.className = 'city-label'; baLabel.textContent = 'Buenos Aires';
+      new maplibregl.Marker({ element: baLabel, anchor: 'top', offset: [0, 25] }).setLngLat(BA).addTo(map);
+
+      [
+        { coords: VALPO, label: 'Valparaíso', anchor: 'right', offset: [-10, 0] },
+        { coords: PARENAS, label: 'Punta Arenas', anchor: 'left', offset: [10, 0], noPin: true },
+        { coords: USH, label: 'Ushuaia', anchor: 'left', offset: [10, 0] },
+      ].forEach(({ coords, label, anchor, offset, noPin }) => {
+        if (!noPin) {
+          const pinEl = document.createElement('div');
+          pinEl.className = 'marker-pin'; pinEl.innerHTML = pinSvg;
+          new maplibregl.Marker({ element: pinEl, anchor: 'bottom' }).setLngLat(coords).addTo(map);
+        }
+
+        const labelEl = document.createElement('div');
+        labelEl.className = 'city-label'; labelEl.textContent = label;
+        new maplibregl.Marker({ element: labelEl, anchor, offset }).setLngLat(coords).addTo(map);
+      });
+
+      // ── Smaller place markers along the coast (decorative labels only) ──
+      [
+        { coords: NIEBLA, text: 'Niebla' },
+        { coords: PMONTT, text: 'Puerto Montt' },
+        { coords: CASTRO, text: 'Castro' },
+      ].forEach(({ coords, text }) => {
+        const el = document.createElement('div');
+        el.className = 'place-label'; el.style.fontWeight = '700'; el.style.color = '#3E5C76';
+        el.textContent = text;
+        new maplibregl.Marker({ element: el, anchor: 'left', offset: [8, 0] }).setLngLat(coords).addTo(map);
+      });
+
+      // ── Day-marker dots (one per day, hidden until that day is selected) ─
+      // Matches Polar's single moving current-position dot: every day gets
+      // a dot at its position, but only the active day's dot is visible
+      // (and pulses via pos-pulse) — never more than one shown at once.
+      window.__dayDots = {};
+      DAYS.forEach(d => {
+        const dotEl = document.createElement('div');
+        dotEl.className = 'map-day-dot';
+        dotEl.title = `Day ${d.n}: ${d.title}`;
+        dotEl.addEventListener('click', () => selectDay(d.n));
+        const endPoint = d.coords[d.coords.length - 1];
+        new maplibregl.Marker({ element: dotEl, anchor: 'center' }).setLngLat(endPoint).addTo(map);
+        window.__dayDots[d.n] = dotEl;
+      });
+
+      // ── Popup that shows the selected day's info, anchored to the dot ─
+      window.__dayPopup = new maplibregl.Popup({ closeButton: true, closeOnClick: false, offset: 16, maxWidth: '360px' });
+
+      selectDay(currentDay, true);
+      showOverview(0);
+      // A small buffer below the resting overview zoom, not the exact same
+      // value — otherwise a long leg (e.g. the Buenos Aires/Ushuaia flight,
+      // which spans nearly the whole journey once the day-bar's bottom
+      // padding is factored in) fits to exactly the overview's zoom and
+      // gets clamped there, producing no visible zoom change at all.
+      map.setMinZoom(map.getZoom() - 0.6);
+    });
+
+    // ── Day-bar UI ───────────────────────────────────────────────
+    const dayTrack = document.getElementById('day-track');
+    DAYS.forEach(d => {
+      const pip = document.createElement('button');
+      pip.className = 'day-pip';
+      pip.textContent = d.n;
+      pip.id = 'day-pip-' + d.n;
+      pip.addEventListener('click', () => selectDay(d.n));
+      dayTrack.appendChild(pip);
+    });
+
+    document.querySelectorAll('.day-nav-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const dir = parseInt(btn.dataset.dir, 10);
+        selectDay(Math.min(14, Math.max(1, currentDay + dir)));
+      });
+    });
+
+    // ── Mobile bottom sheet (replaces floating popup + day-bar under 700px) ──
+    const mobileDayTrack = document.getElementById('mobile-day-track');
+    DAYS.forEach(d => {
+      const pip = document.createElement('button');
+      pip.className = 'mobile-day-pip';
+      pip.textContent = d.n;
+      pip.id = 'mobile-day-pip-' + d.n;
+      pip.addEventListener('click', () => selectDay(d.n));
+      mobileDayTrack.appendChild(pip);
+    });
+    document.getElementById('mobile-sheet-handle').addEventListener('click', () => {
+      document.getElementById('mobile-sheet').classList.toggle('expanded');
+    });
+
+    function boundsFromCoords(coords, singlePointMargin) {
+      let minLng = Infinity, minLat = Infinity, maxLng = -Infinity, maxLat = -Infinity;
+      coords.forEach(([lng, lat]) => {
+        minLng = Math.min(minLng, lng); maxLng = Math.max(maxLng, lng);
+        minLat = Math.min(minLat, lat); maxLat = Math.max(maxLat, lat);
+      });
+      if (minLng === maxLng && minLat === maxLat) {
+        const [dLng, dLat] = singlePointMargin || [4, 3];
+        return [[minLng - dLng, minLat - dLat], [maxLng + dLng, maxLat + dLat]];
+      }
+      return [[minLng, minLat], [maxLng, maxLat]];
+    }
+
+    function selectDay(n, skipFly) {
+      currentDay = n;
+      const day = DAYS.find(d => d.n === n);
+
+      document.querySelectorAll('.day-pip').forEach(p => p.classList.remove('active', 'visited'));
+      document.querySelectorAll('.mobile-day-pip').forEach(p => p.classList.remove('active', 'visited'));
+      if (window.__dayDots) Object.values(window.__dayDots).forEach(el => el.classList.remove('active'));
+      DAYS.forEach(d => {
+        const pip = document.getElementById('day-pip-' + d.n);
+        if (d.n < n) pip.classList.add('visited');
+        if (d.n === n) pip.classList.add('active');
+        const mobilePip = document.getElementById('mobile-day-pip-' + d.n);
+        if (d.n < n) mobilePip.classList.add('visited');
+        if (d.n === n) mobilePip.classList.add('active');
+      });
+      const activeDot = window.__dayDots && window.__dayDots[n];
+      if (activeDot) activeDot.classList.add('active');
+      const activePip = document.getElementById('day-pip-' + n);
+      activePip.scrollIntoView({ behavior: skipFly ? 'auto' : 'smooth', inline: 'center', block: 'nearest' });
+      const activeMobilePip = document.getElementById('mobile-day-pip-' + n);
+      activeMobilePip.scrollIntoView({ behavior: skipFly ? 'auto' : 'smooth', inline: 'center', block: 'nearest' });
+
+      if (!map1Loaded) return;
+
+      const travelled = travelledCoords(n);
+      map.getSource('active-route').setData({
+        type: 'Feature',
+        properties: {},
+        geometry: { type: 'LineString', coordinates: travelled.length >= 2 ? travelled : [day.coords[0], day.coords[0]] }
+      });
+
+      const endPoint = day.coords[day.coords.length - 1];
+
+      const thumbStyle = day.image ? `style="background-image:url('${day.image}')"` : '';
+      if (window.__dayPopup) {
+        window.__dayPopup.setLngLat(endPoint).setHTML(`
+          <div class="popup-body">
+            <div class="popup-thumb type-${day.type}" ${thumbStyle}>
+              ${day.image ? '' : `<span class="thumb-daynum">${day.n}</span>`}
+            </div>
+            <div class="popup-info">
+              <div class="popup-eyebrow">
+                <span class="popup-daynum">Day ${day.n} of 14</span>
+                <span class="popup-badge">${day.badge}</span>
+              </div>
+              <div class="popup-title">${day.title}</div>
+              <div class="popup-text">${day.text}</div>
+            </div>
+          </div>
+        `).addTo(map);
+      }
+
+      // Mobile bottom sheet mirrors the same content (see #mobile-sheet).
+      const mobileThumb = document.getElementById('mobile-thumb');
+      mobileThumb.className = 'popup-thumb type-' + day.type;
+      const mobileImage = day.imageMobile || day.image;
+      mobileThumb.setAttribute('style', mobileImage ? `background-image:url('${mobileImage}')` : '');
+      mobileThumb.innerHTML = mobileImage ? '' : `<span class="thumb-daynum">${day.n}</span>`;
+      document.getElementById('mobile-daynum').textContent = `Day ${day.n} of 14`;
+      document.getElementById('mobile-badge').textContent = day.badge;
+      document.getElementById('mobile-title').textContent = day.title;
+      document.getElementById('mobile-text').textContent = day.text;
+      document.getElementById('mobile-sheet').classList.remove('expanded');
+
+      const isMobile = window.matchMedia('(max-width: 700px)').matches;
+      // Flight days fit their departure + arrival together, which forces a
+      // wide, zoomed-out view to keep both far-apart endpoints on screen —
+      // that reads as "no zoom" rather than an arrival. Framing just the
+      // arrival point instead gives flight days the same obvious zoom-in
+      // feel as every other day.
+      const boundsCoords = day.type === 'flight' ? [endPoint] : day.coords;
+      const singlePointMargin = day.type === 'flight' ? [1, 0.75] : undefined;
+      map.fitBounds(boundsFromCoords(boundsCoords, singlePointMargin), {
+        padding: { top: 60, bottom: isMobile ? 260 : 180, left: 60, right: 60 },
+        duration: skipFly ? 0 : 900, maxZoom: 6
+      });
+    }
+
+    // ── Overview bounds (initial view / max zoom-out) ─────────────
+    const OVERVIEW_BOUNDS = [[-77, -57.5], [-56, -31.5]];
+    function showOverview(duration) {
+      map.fitBounds(OVERVIEW_BOUNDS, { padding: 60, duration });
+    }
+
+    // ── Keyboard navigation ─────────────────────────────────────────
+    window.addEventListener('keydown', e => {
+      if (e.key === 'ArrowRight') selectDay(Math.min(14, currentDay + 1));
+      if (e.key === 'ArrowLeft')  selectDay(Math.max(1, currentDay - 1));
+    });
+  </script>
+</body>
+</html>
