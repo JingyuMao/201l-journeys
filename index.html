@@ -554,7 +554,13 @@
       });
 
       // ── Popup that shows the selected day's info, anchored to the dot ─
-      window.__dayPopup = new maplibregl.Popup({ closeButton: true, closeOnClick: false, offset: 16, maxWidth: '360px' });
+      // focusAfterOpen: false — MapLibre's Popup otherwise calls .focus() on its
+      // close button every time the content updates (on .addTo() AND on every
+      // .setHTML()), and a bare .focus() scrolls the focused element into view.
+      // That scroll-into-view can leak past an iframe boundary into the parent
+      // document — this is what was moving the embedding page on every day
+      // change, more noticeably when the popup landed near the iframe's top edge.
+      window.__dayPopup = new maplibregl.Popup({ closeButton: true, closeOnClick: false, offset: 16, maxWidth: '360px', focusAfterOpen: false });
 
       selectDay(currentDay, true);
       showOverview(0);
@@ -598,6 +604,18 @@
       document.getElementById('mobile-sheet').classList.toggle('expanded');
     });
 
+    // Scrolls a pip into view within its own horizontal strip only, via
+    // track.scrollTo() on the exact overflow container — never
+    // element.scrollIntoView(), which walks every scrollable ancestor
+    // (including, in some browsers, out past an iframe boundary into the
+    // parent page) and was causing the embedding page to jump on day change.
+    function scrollPipIntoTrack(track, pip, smooth) {
+      const targetLeft = pip.offsetLeft - (track.clientWidth - pip.offsetWidth) / 2;
+      const maxScroll = track.scrollWidth - track.clientWidth;
+      const clamped = Math.max(0, Math.min(targetLeft, maxScroll));
+      track.scrollTo({ left: clamped, behavior: smooth ? 'smooth' : 'auto' });
+    }
+
     function boundsFromCoords(coords, singlePointMargin) {
       let minLng = Infinity, minLat = Infinity, maxLng = -Infinity, maxLat = -Infinity;
       coords.forEach(([lng, lat]) => {
@@ -629,9 +647,9 @@
       const activeDot = window.__dayDots && window.__dayDots[n];
       if (activeDot) activeDot.classList.add('active');
       const activePip = document.getElementById('day-pip-' + n);
-      activePip.scrollIntoView({ behavior: skipFly ? 'auto' : 'smooth', inline: 'center', block: 'nearest' });
+      scrollPipIntoTrack(dayTrack, activePip, !skipFly);
       const activeMobilePip = document.getElementById('mobile-day-pip-' + n);
-      activeMobilePip.scrollIntoView({ behavior: skipFly ? 'auto' : 'smooth', inline: 'center', block: 'nearest' });
+      scrollPipIntoTrack(mobileDayTrack, activeMobilePip, !skipFly);
 
       if (!map1Loaded) return;
 
