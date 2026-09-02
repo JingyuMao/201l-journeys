@@ -238,6 +238,25 @@
     requestAnimationFrame(() => map.resize());
     window.addEventListener('resize', () => map.resize());
 
+    // ── Click-to-activate ──────────────────────────────────────────
+    // Pan/zoom stay off until the user clicks anywhere on the map, so an
+    // embedded map sitting mid-page doesn't hijack scroll (mouse wheel)
+    // or touch gestures meant for scrolling the surrounding page. Day-bar
+    // and popup buttons still work immediately — only direct map gestures
+    // are gated. Programmatic moves (fitBounds/setZoom from selectDay,
+    // the initial overview) are unaffected either way.
+    map.scrollZoom.disable();
+    map.dragPan.disable();
+    map.doubleClickZoom.disable();
+    map.touchZoomRotate.disable();
+    document.getElementById('map').addEventListener('click', () => {
+      map.scrollZoom.enable();
+      map.dragPan.enable();
+      map.doubleClickZoom.enable();
+      map.touchZoomRotate.enable();
+      map.touchZoomRotate.disableRotation();
+    }, { once: true });
+
     function spline(pts, segs = 16) {
       if (pts.length < 2) return pts;
       const out = [];
