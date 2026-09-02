@@ -562,7 +562,7 @@
       // change, more noticeably when the popup landed near the iframe's top edge.
       window.__dayPopup = new maplibregl.Popup({ closeButton: true, closeOnClick: false, offset: 16, maxWidth: '360px', focusAfterOpen: false });
 
-      selectDay(currentDay, true);
+      selectDay(currentDay, true, false);
       showOverview(0);
       // A small buffer below the resting overview zoom, not the exact same
       // value — otherwise a long leg (e.g. the Buenos Aires/Ushuaia flight,
@@ -629,7 +629,8 @@
       return [[minLng, minLat], [maxLng, maxLat]];
     }
 
-    function selectDay(n, skipFly) {
+    function selectDay(n, skipFly, openPopup) {
+      if (openPopup === undefined) openPopup = true;
       currentDay = n;
       const day = DAYS.find(d => d.n === n);
 
@@ -678,7 +679,11 @@
               <div class="popup-text">${day.text}</div>
             </div>
           </div>
-        `).addTo(map);
+        `);
+        // Only actually shown once the user has clicked a date — the
+        // initial load call passes openPopup:false so the popup doesn't
+        // appear before any interaction.
+        if (openPopup) window.__dayPopup.addTo(map);
       }
 
       // Mobile bottom sheet mirrors the same content (see #mobile-sheet).
