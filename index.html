@@ -569,7 +569,12 @@
       // which spans nearly the whole journey once the day-bar's bottom
       // padding is factored in) fits to exactly the overview's zoom and
       // gets clamped there, producing no visible zoom change at all.
-      map.setMinZoom(map.getZoom() - 0.6);
+      const minZ = map.getZoom() - 0.6;
+      map.setMinZoom(minZ);
+      // Land on that same min zoom by default, so the initial view is
+      // already the furthest-out scale the user can reach — not a step
+      // above it.
+      map.setZoom(minZ);
     });
 
     // ── Day-bar UI ───────────────────────────────────────────────
